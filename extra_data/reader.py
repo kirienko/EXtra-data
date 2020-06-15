@@ -42,7 +42,7 @@ from .read_machinery import (
     find_proposal,
 )
 from .run_files_map import RunFilesMap
-from . import locality
+from . import locality, voview
 from .file_access import FileAccess
 
 __all__ = [
@@ -1310,11 +1310,16 @@ def RunDirectory(path, include='*', file_filter=locality.lc_any):
         Function to subset the list of filenames to open.
         Meant to be used with functions in the extra_data.locality module.
     """
-    files = [f for f in os.listdir(path) if f.endswith('.h5')]
+    files = [f for f in os.listdir(path) if f.endswith('.h5') and f != 'overview.h5']
     files = [osp.join(path, f) for f in fnmatch.filter(files, include)]
     files = file_filter(files)
     if not files:
         raise Exception("No HDF5 files found in {} with glob pattern {}".format(path, include))
+
+    if file_filter is locality.lc_any:
+        voview_file_acc = voview.find_file_valid(path)
+        if voview_file_acc is not None:
+            return DataCollection([voview_file_acc])
 
     files_map = RunFilesMap(path)
     t0 = time.monotonic()
