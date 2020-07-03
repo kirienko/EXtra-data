@@ -1288,7 +1288,7 @@ def H5File(path):
     return DataCollection.from_path(path)
 
 
-def RunDirectory(path, include='*', file_filter=locality.lc_any):
+def RunDirectory(path, include='*', file_filter=locality.lc_any, *, _use_voview=True):
     """Open data files from a 'run' at European XFEL.
 
     ::
@@ -1312,11 +1312,11 @@ def RunDirectory(path, include='*', file_filter=locality.lc_any):
     """
     files = [f for f in os.listdir(path) if f.endswith('.h5') and f != 'overview.h5']
     files = [osp.join(path, f) for f in fnmatch.filter(files, include)]
-    files = file_filter(files)
-    if not files:
+    sel_files = file_filter(files)
+    if not sel_files:
         raise Exception("No HDF5 files found in {} with glob pattern {}".format(path, include))
 
-    if file_filter is locality.lc_any:
+    if _use_voview and (sel_files == files):
         voview_file_acc = voview.find_file_valid(path)
         if voview_file_acc is not None:
             return DataCollection([voview_file_acc])
