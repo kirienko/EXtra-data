@@ -1310,7 +1310,8 @@ def RunDirectory(path, include='*', file_filter=locality.lc_any, *, _use_voview=
         Function to subset the list of filenames to open.
         Meant to be used with functions in the extra_data.locality module.
     """
-    files = [f for f in os.listdir(path) if f.endswith('.h5') and f != 'overview.h5']
+    files = [f for f in os.listdir(path)
+             if f.endswith('.h5') and ('overview' not in f.lower())]
     files = [osp.join(path, f) for f in fnmatch.filter(files, include)]
     sel_files = file_filter(files)
     if not sel_files:
