@@ -163,7 +163,7 @@ One can select a single data source as a ``KeyData`` object. It offers the same
 functionality you can find in the ``DataCollection`` object. To select a data source
 from a run::
 
-  keydata = run[source, key]
+  xgm_intensity = run['SA1_XTD2_XGM/XGM/DOOCS:output', 'data.intensityTD']
 
 .. autoclass:: extra_data.keydata.KeyData
    :members:
