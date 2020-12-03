@@ -25,6 +25,7 @@ class VirtualCXIWriter:
       The detector data interface for the data to gather in this file.
     """
     def __init__(self, detdata):
+        self.magic = 120
         self.detdata = detdata
 
         self.modulenos = sorted(detdata.modno_to_source)
@@ -39,6 +40,7 @@ class VirtualCXIWriter:
         )
 
         # cumulative sum gives the end of each train, subtract to get start
+        # ie [128, 128, 128, ...] -> [0, 128, 256, ...]
         self.train_id_to_ix = frame_counts.cumsum() - frame_counts
 
     @property
@@ -103,14 +105,24 @@ class VirtualCXIWriter:
             else:
                 n_match = len(chunk_tids)
 
+            n_match_out = n_match   # may differ from input
+
             # Select the matching data and add it to the target
             chunk_match_end = chunk_match_start + n_match
-            matched = chunk_data[chunk_match_start:chunk_match_end]
-            target[tgt_start : tgt_start+n_match, tgt_ax1] = matched
+            matched = chunk_data[chunk_match_start:chunk_match_end]     # HERE WE ARE
+            start, block, stride = 1, 120, 128
+            if isinstance(matched, h5py.VirtualSource):
+                # pass
+                matched = matched[h5py.MultiBlockSlice(start=start, block=block, stride=stride)]
+                n_match_out = len(chunk.train_ids) * self.magic
+
+            # target[tgt_start : tgt_start+n_match, tgt_ax1] = matched
+            target[tgt_start : tgt_start+n_match_out, tgt_ax1] = matched
 
             # Fill in the map of what data we have
             if have_data is not None:
-                have_data[tgt_start : tgt_start+n_match, tgt_ax1] = True
+                # have_data[tgt_start : tgt_start+n_match, tgt_ax1] = True
+                have_data[tgt_start : tgt_start+n_match_out, tgt_ax1] = True
 
             # Prepare remaining data in the chunk for the next match
             chunk_match_start = chunk_match_end
@@ -122,6 +134,7 @@ class VirtualCXIWriter:
         image_grp = h5file['INSTRUMENT'][src]['image']
 
         VLayout = h5py.VirtualLayout
+        self.nframes = len(self.detdata.frame_counts) * 120  # 120 is a magic number for the time being
 
         if 'gain' in image_grp:
             log.info("Identified calibrated data")
@@ -211,9 +224,9 @@ class VirtualCXIWriter:
             # it allows extra data.
             f.create_dataset('entry_1/pulseId', data=pulse_ids)
             f.create_dataset('entry_1/trainId', data=self.train_ids_perframe)
-            cellids = f.create_virtual_dataset('entry_1/cellId',
-                                               layouts['cellId'])
-            cellids.attrs['axes'] = 'experiment_identifier:module_identifier'
+            # cellids = f.create_virtual_dataset('entry_1/cellId',
+            #                                    layouts['cellId'])
+            # cellids.attrs['axes'] = 'experiment_identifier:module_identifier'
 
             dgrp = f.create_group('entry_1/instrument_1/detector_1')
             if len(layouts['data'].shape) == 4:
