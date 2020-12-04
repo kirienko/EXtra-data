@@ -31,17 +31,22 @@ class VirtualCXIWriter:
         self.modulenos = sorted(detdata.modno_to_source)
 
         frame_counts = detdata.frame_counts
-        self.nframes = frame_counts.sum()
+        log.info(f">>> set(frame_counts) = {set(frame_counts)}")
+        # self.nframes = frame_counts.sum()
+        self.nframes = len(self.detdata.frame_counts) * 120  # 120 is a magic number for the time being
+
         log.info("Up to %d frames per train, %d frames in total",
                  frame_counts.max(), self.nframes)
 
         self.train_ids_perframe = np.repeat(
-            frame_counts.index.values, frame_counts.values.astype(np.intp)
+            # frame_counts.index.values, frame_counts.values.astype(np.intp)
+            frame_counts.index.values, 120
         )
 
         # cumulative sum gives the end of each train, subtract to get start
         # ie [128, 128, 128, ...] -> [0, 128, 256, ...]
-        self.train_id_to_ix = frame_counts.cumsum() - frame_counts
+        import pandas as pd
+        self.train_id_to_ix = pd.Series(np.arange(len(frame_counts)) * 120, index=frame_counts.index)# frame_counts.cumsum() - frame_counts
 
     @property
     def nmodules(self):
@@ -85,9 +90,13 @@ class VirtualCXIWriter:
         it might not correspond to a contiguous region in the output. So this
         may perform multiple mappings.
         """
+        log.warning("-" * 20)
         # Expand the list of train IDs to one per frame
-        chunk_tids = np.repeat(chunk.train_ids, chunk.counts.astype(np.intp))
-
+        # chunk_tids = np.repeat(chunk.train_ids, chunk.counts.astype(np.intp))
+        adjusted_counts = 120 * (chunk.counts.astype(np.intp) // 128)
+        log.warning(f"len(chunk.train_ids)={len(chunk.train_ids)}")
+        log.warning(f"adjusted_counts.sum()={adjusted_counts.sum()}")
+        chunk_tids = np.repeat(chunk.train_ids, adjusted_counts)
         chunk_match_start = int(chunk.first)
 
         while chunk_tids.size > 0:
@@ -95,6 +104,10 @@ class VirtualCXIWriter:
             tgt_start = int(self.train_id_to_ix[chunk_tids[0]])
 
             target_tids = self.train_ids_perframe[tgt_start : tgt_start+len(chunk_tids)]
+
+            log.warning(f"tgt_start = {tgt_start}, train_ids_perframe.shape = {self.train_ids_perframe.shape}")
+            # target_tids = self.train_ids_perframe[tgt_start : tgt_start+ (120 * (len(chunk_tids) // 128))]
+            log.warning(f"{target_tids.shape}, {chunk_tids.shape}")
             assert target_tids.shape == chunk_tids.shape
             assert target_tids[0] == chunk_tids[0]
 
@@ -110,11 +123,19 @@ class VirtualCXIWriter:
             # Select the matching data and add it to the target
             chunk_match_end = chunk_match_start + n_match
             matched = chunk_data[chunk_match_start:chunk_match_end]     # HERE WE ARE
-            start, block, stride = 1, 120, 128
+
             if isinstance(matched, h5py.VirtualSource):
-                # pass
-                matched = matched[h5py.MultiBlockSlice(start=start, block=block, stride=stride)]
-                n_match_out = len(chunk.train_ids) * self.magic
+                start, block, stride = chunk_match_start + 1, 120, 128
+                matched = chunk_data[h5py.MultiBlockSlice(
+                    start=start, block=block, stride=stride, count=n_match // 120
+                )]
+                log.info('-' * 20)
+                log.info(f"matched.sel.array_shape = {matched.sel.array_shape}")
+                log.info(f"n_match = {n_match}, n_match_out = {120 * (n_match // 128)}")
+                # assert n_match % 128 == 0
+                # n_match_out = 120 * (n_match // 128)
+                assert matched.sel.array_shape[0] == n_match_out
+                #n_match_out = len(chunk.train_ids) * self.magic
 
             # target[tgt_start : tgt_start+n_match, tgt_ax1] = matched
             target[tgt_start : tgt_start+n_match_out, tgt_ax1] = matched
@@ -134,7 +155,7 @@ class VirtualCXIWriter:
         image_grp = h5file['INSTRUMENT'][src]['image']
 
         VLayout = h5py.VirtualLayout
-        self.nframes = len(self.detdata.frame_counts) * 120  # 120 is a magic number for the time being
+        # self.nframes = len(self.detdata.frame_counts) * 120  # 120 is a magic number for the time being
 
         if 'gain' in image_grp:
             log.info("Identified calibrated data")
@@ -158,8 +179,8 @@ class VirtualCXIWriter:
                 'data': VLayout(shape, dtype=image_grp['data'].dtype),
             }
 
-        layouts['cellId'] = VLayout((self.nframes, self.nmodules),
-                                    dtype=image_grp['cellId'].dtype)
+        # layouts['cellId'] = VLayout((self.nframes, self.nmodules),
+        #                             dtype=image_grp['cellId'].dtype)
 
         for name, layout in layouts.items():
             key = 'image.{}'.format(name)
